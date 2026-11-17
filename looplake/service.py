@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from .batch import BatchImport
+from .calibration import Calibration
+from .correction import Correction, Review
 from .dimensions import Dimensions
 from .landing import Landing
 from .ledger import Ledger
@@ -21,7 +23,8 @@ class LakeService:
         self.store = Store(database_path)
         self.dimensions = Dimensions(self.store)
         self.landing = Landing(self.store, self.dimensions)
-        self.ledger = Ledger(self.store, self.dimensions, self.landing)
+        self.calibration = Calibration(self.store)
+        self.ledger = Ledger(self.store, self.dimensions, self.landing, self.calibration)
         self.inventory = Inventory(self.ledger)
         self.query = Query(self.ledger)
         self.settlement = Settlement(self.store)
@@ -29,10 +32,12 @@ class LakeService:
         self.mart = Mart(self.ledger, self.reconciliation)
         self.releases = Release(self.store, self.mart, self.reconciliation, self.inventory)
         self.snapshots = SnapshotAudit(self.store)
+        self.correction = Correction(self.store)
+        self.review = Review(self.store, self.calibration)
         self.quality = Quality(self.store, self.landing, self.ledger,
                                self.reconciliation, self.mart)
         self.lineage = Lineage(self.store, self.ledger, self.reconciliation,
-                               self.mart, self.releases)
+                               self.mart, self.releases, self.calibration)
         self.batches = BatchImport(self.ledger)
 
     def register_source(self, source, channel, expected_version=None):
@@ -43,6 +48,18 @@ class LakeService:
 
     def ingest(self, data):
         return self.ledger.ingest(data)
+
+    def put_calibration(self, data):
+        return self.calibration.put(data)
+
+    def revoke_calibration(self, device_id, certificate_id, reason=None, notified_at=None):
+        return self.calibration.revoke(device_id, certificate_id, reason, notified_at)
+
+    def calibrate(self, fact_id, new_weight=None, calibration_id=None, note=None):
+        return self.calibration.correct(fact_id, new_weight, calibration_id, note)
+
+    def calibration_impact(self, device_id, start, end, material_id=None, tolerance_kg="0.5"):
+        return self.calibration.impact(device_id, start, end, material_id, tolerance_kg)
 
     def retry(self, ingestion_id):
         return self.ledger.normalize(ingestion_id)

@@ -18,6 +18,8 @@ def seed_dimensions(service: LakeService, start: str = "2026-01-01"):
          "valid_from": start, "attributes": {"community_id": "community-1"}},
         {"kind": "device", "external_id": "box-2", "name": "合成箱二",
          "valid_from": start, "attributes": {"community_id": "community-2"}},
+        {"kind": "device", "external_id": "scale-1", "name": "合成地磅",
+         "valid_from": start, "attributes": {"community_id": "community-1"}},
         {"kind": "station", "external_id": "station-1", "name": "合成站一", "valid_from": start},
         {"kind": "material", "external_id": "foam", "name": "泡沫", "valid_from": start},
         {"kind": "material", "external_id": "glass", "name": "玻璃", "valid_from": start},
@@ -32,14 +34,16 @@ def event(event_type: str, external_id: str, batch_id: str = "batch-1",
           material_id: str = "foam", weight: str = "10",
           happened_at: str = "2026-07-15T10:00:00+08:00", **changes):
     details = {"deposit": ("box-feed", "smart_box", "device_id", "box-1"),
-               "weigh_in": ("scale-feed", "scale", "station_id", "station-1"),
-               "weigh_out": ("scale-feed", "scale", "station_id", "station-1"),
+               "weigh_in": ("scale-feed", "scale", "device_id", "scale-1"),
+               "weigh_out": ("scale-feed", "scale", "device_id", "scale-1"),
                "transfer": ("station-feed", "station", "station_id", "station-1"),
                "payout": ("pay-feed", "payment", "actor_id", "resident-1")}
     source, channel, location_key, location_value = details[event_type]
     row = {"source": source, "external_id": external_id, "event_type": event_type,
            "happened_at": happened_at, "batch_id": batch_id, "channel": channel,
            location_key: location_value}
+    if event_type in {"weigh_in", "weigh_out"}:
+        row["station_id"] = changes.pop("station_id", "station-1")
     if event_type == "payout":
         row["payout_yuan"] = changes.pop("payout_yuan", "0.8")
     else:

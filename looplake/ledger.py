@@ -10,8 +10,10 @@ from .store import Store
 
 
 class Ledger:
-    def __init__(self, store: Store, dimensions: Dimensions, landing: Landing):
+    def __init__(self, store: Store, dimensions: Dimensions, landing: Landing,
+                 calibration=None):
         self.store, self.dimensions, self.landing = store, dimensions, landing
+        self.calibration = calibration
 
     def ingest(self, data: dict):
         landed = self.landing.accept(data)
@@ -54,18 +56,31 @@ class Ledger:
                 raise LakeError("missing_station", "outbound weighing needs station")
             if event.event_type == "transfer" and "station" not in dims:
                 raise LakeError("missing_station", "transfer needs station")
-            cursor = conn.execute("INSERT INTO facts(ingestion_id,source,external_id,event_type,happened_at,day,batch_id,material_id,device_id,station_id,actor_id,street_id,community_id,weight_kg,payout_yuan,channel,dimensions_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            raw_weight = event.weight_kg
+            booked_weight = event.weight_kg
+            calibration_snapshot = {}
+            if event.event_type in {"weigh_in", "weigh_out"} and self.calibration is not None:
+                snapshot = self.calibration.annotate(conn, dims, event.happened_at[:10])
+                if snapshot is not None:
+                    if not snapshot.get("uncalibrated"):
+                        from .calibration import scaled
+                        booked_weight = scaled(event.weight_kg, snapshot["factor"])
+                    calibration_snapshot = snapshot
+                    calibration_snapshot["booked_weight_kg"] = booked_weight
+            cursor = conn.execute("INSERT INTO facts(ingestion_id,source,external_id,event_type,happened_at,day,batch_id,material_id,device_id,station_id,actor_id,street_id,community_id,weight_kg,payout_yuan,channel,dimensions_json,raw_weight_kg,calibration_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                   (ingestion_id, event.source, event.external_id, event.event_type,
                                    event.happened_at, event.happened_at[:10], event.batch_id,
                                    event.material_id, event.device_id, event.station_id, event.actor_id,
                                    dims.get("street", {}).get("external_id"), dims.get("community", {}).get("external_id"),
-                                   event.weight_kg, event.payout_yuan, event.channel,
-                                   json.dumps(dims, ensure_ascii=False, sort_keys=True)))
+                                   booked_weight, event.payout_yuan, event.channel,
+                                   json.dumps(dims, ensure_ascii=False, sort_keys=True),
+                                   raw_weight, json.dumps(calibration_snapshot, ensure_ascii=False, sort_keys=True)))
             fact_id = cursor.lastrowid
             conn.execute("UPDATE ingestions SET state='normalized', issue=NULL,normalized_id=? WHERE id=?",
                          (fact_id, ingestion_id))
             self.store.audit(conn, "normalized", str(fact_id), {"ingestion_id": ingestion_id,
-                                                                 "dimension_versions": {k: v["version"] for k, v in dims.items()}})
+                                                                 "dimension_versions": {k: v["version"] for k, v in dims.items()},
+                                                                 "calibration": calibration_snapshot or None})
         return {"ingestion_id": ingestion_id, "fact_id": fact_id, "state": "normalized", "created": created}
 
     def batch(self, batch_id: str):

@@ -39,6 +39,23 @@ def parser():
     release.add_argument("fingerprint")
     inspect = sub.add_parser("inspect")
     inspect.add_argument("release_id", type=int)
+    certificate = sub.add_parser("calibrate")
+    certificate.add_argument("file")
+    revoke = sub.add_parser("revoke-calibration")
+    revoke.add_argument("device_id")
+    revoke.add_argument("certificate_id")
+    revoke.add_argument("--reason")
+    revoke.add_argument("--notified-at")
+    impact = sub.add_parser("calibration-impact")
+    impact.add_argument("device_id")
+    impact.add_argument("start")
+    impact.add_argument("end")
+    impact.add_argument("--material")
+    correction = sub.add_parser("correct")
+    correction.add_argument("fact_id", type=int)
+    correction.add_argument("--new-weight")
+    correction.add_argument("--calibration-id", type=int)
+    correction.add_argument("--note")
     return p
 
 
@@ -66,6 +83,16 @@ def execute(service: LakeService, args):
         return service.publish(args.name, args.month, args.fingerprint)
     if args.command == "inspect":
         return service.releases.get(args.release_id)
+    if args.command == "calibrate":
+        with open(args.file, encoding="utf-8") as file:
+            return service.put_calibration(json.load(file))
+    if args.command == "revoke-calibration":
+        return service.revoke_calibration(args.device_id, args.certificate_id,
+                                          args.reason, args.notified_at)
+    if args.command == "calibration-impact":
+        return service.calibration_impact(args.device_id, args.start, args.end, args.material)
+    if args.command == "correct":
+        return service.calibrate(args.fact_id, args.new_weight, args.calibration_id, args.note)
     raise LakeError("unknown_command", "unsupported command")
 
 

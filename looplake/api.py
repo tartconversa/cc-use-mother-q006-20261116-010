@@ -66,6 +66,26 @@ class SourceDisableInput(Strict):
     expected_version: int
 
 
+class CalibrationInput(Strict):
+    device_id: str
+    certificate_id: str
+    valid_from: str
+    valid_to: str
+    factor: str
+    recorded_at: str | None = None
+
+
+class CalibrationRevokeInput(Strict):
+    reason: str | None = None
+    notified_at: str | None = None
+
+
+class CorrectionInput(Strict):
+    new_weight_kg: str | None = None
+    calibration_id: int | None = None
+    note: str | None = None
+
+
 def create_app(db_path: str | Path | None = None):
     path = db_path or os.environ.get("LOOPLAKE_DB", "looplake.sqlite3")
     service = LakeService(path)
@@ -100,6 +120,35 @@ def create_app(db_path: str | Path | None = None):
     @app.get("/dimensions/{kind}/{external_id}")
     def dimension_versions(kind: str, external_id: str):
         return service.dimensions.list_versions(kind, external_id)
+
+    @app.post("/calibrations")
+    def put_calibration(body: CalibrationInput):
+        return service.put_calibration(body.model_dump(exclude_none=True))
+
+    @app.get("/devices/{device_id}/calibrations")
+    def device_calibrations(device_id: str):
+        return service.calibration.certificates(device_id)
+
+    @app.get("/devices/{device_id}/calibration-state")
+    def device_calibration_state(device_id: str):
+        return service.calibration.state(device_id)
+
+    @app.post("/devices/{device_id}/calibrations/{certificate_id}/revoke")
+    def revoke_calibration(device_id: str, certificate_id: str, body: CalibrationRevokeInput):
+        return service.revoke_calibration(device_id, certificate_id, body.reason, body.notified_at)
+
+    @app.post("/facts/{fact_id}/corrections")
+    def correct_fact(fact_id: int, body: CorrectionInput):
+        return service.calibrate(fact_id, body.new_weight_kg, body.calibration_id, body.note)
+
+    @app.get("/facts/{fact_id}/corrections")
+    def fact_corrections(fact_id: int):
+        return service.correction.history(fact_id)
+
+    @app.get("/devices/{device_id}/calibration-impact")
+    def calibration_impact(device_id: str, start: str, end: str,
+                           material_id: str | None = None, tolerance_kg: str = "0.5"):
+        return service.calibration_impact(device_id, start, end, material_id, tolerance_kg)
 
     @app.post("/events")
     def ingest(body: EventInput):

@@ -28,6 +28,8 @@ class Mart:
                 batch_locations.setdefault(fact["batch_id"], set()).add((fact["street_id"], fact["material_id"]))
         excluded = []
         for fact in facts:
+            if (fact.get("state") or "active") != "active":
+                continue
             if fact["batch_id"] not in selected_batches:
                 excluded.append(fact["id"])
                 continue

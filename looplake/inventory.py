@@ -11,12 +11,17 @@ class Inventory:
     def __init__(self, ledger: Ledger):
         self.ledger = ledger
 
-    def station_day(self, station_id: str, material_id: str, day: str):
+    def station_day(self, station_id: str, material_id: str, day: str,
+                    facts: list[dict] | None = None):
         station_id = key(station_id, "station_id")
         material_id = key(material_id, "material_id")
         day = calendar_day(day, "day")
-        facts = self.ledger.store.facts("WHERE station_id=? AND material_id=? AND day<=?",
-                                       (station_id, material_id, day))
+        if facts is None:
+            facts = self.ledger.store.facts("WHERE station_id=? AND material_id=? AND day<=?",
+                                           (station_id, material_id, day))
+        else:
+            facts = [fact for fact in facts if fact["station_id"] == station_id
+                     and fact["material_id"] == material_id and fact["day"] <= day]
         incoming = Decimal("0")
         outgoing = Decimal("0")
         arrivals = []
@@ -45,13 +50,15 @@ class Inventory:
                 "movement_ids": [fact["id"] for fact in same_day],
                 "ready": not negative_at and incoming >= outgoing}
 
-    def month(self, month: str):
+    def month(self, month: str, facts: list[dict] | None = None):
         calendar_day(month + "-01", "month")
-        facts = self.ledger.period(month)
+        if facts is None:
+            facts = self.ledger.period(month)
+        else:
+            facts = [fact for fact in facts if fact["day"][:7] == month]
         keys = sorted({(fact["station_id"], fact["material_id"])
                        for fact in facts if fact["station_id"] and fact["material_id"]
                        and fact["event_type"] in {"weigh_in", "weigh_out"}})
-        last = month + "-31"
         from datetime import date, timedelta
         if month.endswith("12"):
             year = int(month[:4]) + 1

@@ -9,14 +9,23 @@ from .store import Store
 
 class Lineage:
     def __init__(self, store: Store, ledger: Ledger, reconciliation: Reconciliation,
-                 mart: Mart, releases: Release):
+                 mart: Mart, releases: Release, calibration=None):
         self.store, self.ledger = store, ledger
         self.reconciliation, self.mart, self.releases = reconciliation, mart, releases
+        self.calibration = calibration
 
     def fact(self, fact_id: int):
         trace = self.ledger.trace(fact_id)
         dependency = self.reconciliation.fact_dependency(fact_id)
-        return {**trace, "reconciliation": dependency}
+        corrections = self.store.facts("WHERE id=?", (fact_id,))
+        history = []
+        if corrections:
+            with self.store.connect() as conn:
+                history = self.store.all(conn, "SELECT * FROM weight_corrections WHERE fact_id=? ORDER BY id",
+                                         (fact_id,))
+        return {**trace, "reconciliation": dependency,
+                "calibration": trace["fact"].get("calibration", {}),
+                "corrections": history}
 
     def row(self, month: str, street_id: str, material_id: str):
         report = self.mart.month(month)
